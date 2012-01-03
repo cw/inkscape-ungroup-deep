@@ -1,0 +1,15 @@
+<inkscape-extension>
+	<_name>Deep Ungroup</_name>
+	<id>mcepl.ungroup_deep</id>
+	<dependency type="executable" location="extensions">ungroup_deep.py</dependency>
+	<param name="title" type="description">Ungroup all groups in the selected
+		object.</param>
+	 <effect needs-live-preview="false">
+		<effects-menu >
+			<submenu _name="Images" />
+		</effects-menu>
+	</effect>
+	<script>
+		<command reldir="extensions" interpreter="python">ungroup_deep.py</command>
+	</script>
+</inkscape-extension>

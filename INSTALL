@@ -1,0 +1,14 @@
+1. To install, simply copy pixelsnap.py and pixelsnap.inx into your inkscape
+    extensions directory.
+
+    The exact folder may be different on your system, but on mine it's in
+    ~/.config/inkscape/extensions/
+
+
+COMMON PROBLEMS
+
+1. I get a dialog box saying "ImportError: No module named inkex"
+
+This is apparently an issue for Inkscape version 0.46. You need to manually
+add your Inkscape's extensions modules directory to the top of pixelsnap.py.
+Open that file, and find the section titled "INKEX MODULE"
