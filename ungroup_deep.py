@@ -10,7 +10,7 @@ __version__ = "0.1"  # Works but in terms of maturity, still unsure
 
 import logging
 logging.basicConfig(format='%(levelname)s:%(funcName)s:%(message)s',
-    level=logging.DEBUG)
+    level=logging.INFO)
 
 try:
     import inkex
@@ -32,6 +32,8 @@ class Ungroup(inkex.Effect):
             obj_index = list(obj_parent).index(obj)
             for child in reversed(children):
                 obj_parent.insert(obj_index, child)
+            obj_parent.remove(obj)
+
             for elem in children:
                 self._ungroup(elem)
 
