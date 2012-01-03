@@ -26,11 +26,9 @@ INKSCAPE_NS = "http://www.inkscape.org/namespaces/inkscape"
 
 class Ungroup(inkex.Effect):
     def _ungroup(self, obj):
-        logging.debug("obj = %s", obj)
-
         if (obj.tag == inkex.addNS('g', 'svg')):
             propagate_attribs(obj)
-            logging.debug("group element = %s", obj)
+            logging.debug("group element = %s, id = %s", obj, obj.attrib["id"])
             children = list(obj)
             obj_parent = obj.getparent()
             obj_index = list(obj_parent).index(obj)
