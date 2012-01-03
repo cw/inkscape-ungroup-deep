@@ -8,7 +8,6 @@ for an example how to do the transform of parent to children.
 
 __version__ = "0.1"  # Works but in terms of maturity, still unsure
 
-from __future__ import division, print_function
 import logging
 logging.basicConfig(format='%(levelname)s:%(funcName)s:%(message)s',
     level=logging.DEBUG)
