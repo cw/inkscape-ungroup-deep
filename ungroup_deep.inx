@@ -6,7 +6,7 @@
 		object.</param>
 	 <effect needs-live-preview="false">
 		<effects-menu >
-			<submenu _name="Images" />
+			<submenu _name="Arrange" />
 		</effects-menu>
 	</effect>
 	<script>
