@@ -1,48 +1,44 @@
 #!/usr/bin/python
-
+# -*- coding: utf-8 -*-
 """
 http://tutorials.jenkov.com/svg/g-element.html
 
+see #inkscape.html and
+https://github.com/nikitakit/svg2sif/blob/master/synfig_prepare.py#L370
+for an exmaple how to do the transform of parent to children.
 """
 
 from __future__ import division, print_function
-import sys
 
-# INKEX MODULE
-# If you get the "No module named inkex" error, uncomment the relevant line
-# below by removing the '#' at the start of the line.
-#
-#sys.path += ['/usr/share/inkscape/extensions']                     # If you're using a standard Linux installation
-#sys.path += ['/usr/local/share/inkscape/extensions']               # If you're using a custom Linux installation
-#sys.path += ['C:\\Program Files\\Inkscape\\share\\extensions']     # If you're using a standard Windows installation
+try:
+    import inkex
+    #from inkex import unittouu
+except ImportError:
+    raise ImportError("""No module named inkex in {0}.""".format(__file__))
+from svg_utils import propagate_attribs
 
 SVG_NS = "http://www.w3.org/2000/svg"
 INKSCAPE_NS = "http://www.inkscape.org/namespaces/inkscape"
 
-try:
-    import inkex
-    from inkex import unittouu
-except ImportError:
-    raise ImportError("""No module named inkex.
-Please edit the file {0} and see the section titled 'INKEX MODULE'""".format(__file__))
 
 class Ungroup(inkex.Effect):
     def _ungroup(self, obj):
-        print("obj.tag = {0}".format(obj.tag), file=sys.stderr)
+        propagate_attribs(obj)
         if (obj.tag == inkex.addNS('g', 'svg')):
-            print("Found group tag: {0}".format(obj.tag), file=sys.stderr)
             children = list(obj)
             obj_parent = obj.getparent()
             obj_index = list(obj_parent).index(obj)
-            list(obj_parent)[obj_index] = children
+            obj_parent.replace(obj, children[0])
+            if len(children) > 1:
+                children = children[1:]
+                for child in reversed(children):
+                    obj_parent.insert(obj_index, child)
             for elem in children:
                 self._ungroup(elem)
-        else:
-            print("Found other tag: {0}".format(obj.tag), file=sys.stderr)
 
     def effect(self):
         if len(self.selected):
-            for id, elem in self.selected.iteritems():
+            for elem in self.selected.itervalues():
                 self._ungroup(elem)
         else:
             for elem in self.document.getroot():
