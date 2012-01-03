@@ -1,12 +1,12 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-http://tutorials.jenkov.com/svg/g-element.html
-
-see #inkscape.html and
+see #inkscape on Freenode and
 https://github.com/nikitakit/svg2sif/blob/master/synfig_prepare.py#L370
-for an exmaple how to do the transform of parent to children.
+for an example how to do the transform of parent to children.
 """
+
+__version__ = "0.1"  # Works but in terms of maturity, still unsure
 
 from __future__ import division, print_function
 import logging
@@ -15,7 +15,6 @@ logging.basicConfig(format='%(levelname)s:%(funcName)s:%(message)s',
 
 try:
     import inkex
-    #from inkex import unittouu
 except ImportError:
     raise ImportError("""No module named inkex in {0}.""".format(__file__))
 from ungroup_utils import propagate_attribs
@@ -32,10 +31,8 @@ class Ungroup(inkex.Effect):
             children = list(obj)
             obj_parent = obj.getparent()
             obj_index = list(obj_parent).index(obj)
-            obj_parent.replace(obj, children[0])
-            for child in reversed(children[1:]):
+            for child in reversed(children):
                 obj_parent.insert(obj_index, child)
-
             for elem in children:
                 self._ungroup(elem)
 
