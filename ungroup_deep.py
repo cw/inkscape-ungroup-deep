@@ -26,6 +26,21 @@ INKSCAPE_NS = "http://www.inkscape.org/namespaces/inkscape"
 
 class Ungroup(inkex.Effect):
 
+    def __init__(self):
+        inkex.Effect.__init__(self)
+        self.OptionParser.add_option("-s", "--startdepth",
+                action="store", type="int",
+                dest="startdepth", default=0,
+                help="starting depth for ungrouping")
+        self.OptionParser.add_option("-m", "--maxdepth",
+                action="store", type="int",
+                dest="maxdepth", default=65535,
+                help="maximum ungrouping depth")
+        self.OptionParser.add_option("-k", "--keepdepth",
+                action="store", type="int",
+                dest="keepdepth", default=0,
+                help="levels of ungrouping to leave untouched")
+
     def _get_dimension(s="1024"):
         """Convert an SVG length string from arbitrary units to pixels"""
         if s == "":
@@ -56,122 +71,168 @@ class Ungroup(inkex.Effect):
         else:
             return 1024
 
-    def _ungroup(self, node):
+    def _merge_transform(self, node, transform):
         """Propagate style and transform to remove inheritance
         Originally from
         https://github.com/nikitakit/svg2sif/blob/master/synfig_prepare.py#L370
         """
 
+        # Compose the transformations
+        if node.tag == addNS("svg", "svg") and node.get("viewBox"):
+            vx, vy, vw, vh = [self._get_dimension(x)
+                for x in node.get("viewBox").split()]
+            dw = self._get_dimension(node.get("width", vw))
+            dh = self._get_dimension(node.get("height", vh))
+            t = ("translate(%f, %f) scale(%f, %f)" %
+                (-vx, -vy, dw / vw, dh / vh))
+            this_transform = simpletransform.parseTransform(
+                t, transform)
+            this_transform = simpletransform.parseTransform(
+                node.get("transform"), this_transform)
+            del node.attrib["viewBox"]
+        else:
+            this_transform = simpletransform.parseTransform(node.get(
+                "transform"), transform)
+
+        # Set the node's transform attrib
+        node.set("transform",
+                simpletransform.formatTransform(this_transform))
+
+    def _merge_style(self, node, style):
+        """Propagate style and transform to remove inheritance
+        Originally from
+        https://github.com/nikitakit/svg2sif/blob/master/synfig_prepare.py#L370
+        """
+
+        # Compose the style attribs
+        this_style = simplestyle.parseStyle(node.get("style", ""))
+        remaining_style = {}  # Style attributes that are not propagated
+
+        # Filters should remain on the top ancestor
+        non_propagated = ["filter"]
+        for key in non_propagated:
+            if key in this_style.keys():
+                remaining_style[key] = this_style[key]
+                del this_style[key]
+
+        # Create a copy of the parent style, and merge this style into it
+        parent_style_copy = style.copy()
+        parent_style_copy.update(this_style)
+        this_style = parent_style_copy
+
+        # Merge in any attributes outside of the style
+        style_attribs = ["fill", "stroke"]
+        for attrib in style_attribs:
+            if node.get(attrib):
+                this_style[attrib] = node.get(attrib)
+                del node.attrib[attrib]
+
+        if (node.tag == addNS("svg", "svg")
+            or node.tag == addNS("g", "svg")
+            or node.tag == addNS("a", "svg")
+            or node.tag == addNS("switch", "svg")):
+            # Leave only non-propagating style attributes
+            if len(remaining_style) == 0:
+                if "style" in node.keys():
+                    del node.attrib["style"]
+            else:
+                node.set("style", simplestyle.formatStyle(remaining_style))
+
+        else:
+            # This element is not a container
+
+            # Merge remaining_style into this_style
+            this_style.update(remaining_style)
+
+            # Set the element's style attribs
+            node.set("style", simplestyle.formatStyle(this_style))
+
+    def _merge_clippath(self, node, clippath):
+        pass
+
+    def _deep_ungroup(self, node):
         # using iteration instead of recursion to avoid hitting Python
         # max recursion depth limits, which is a problem in converted PDFs
 
-        # Start the queue with empty inherited style and transform.
-        q = [(node, {}, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])]
+        # Seed the queue (stack) with initial node
+        q = [{'node':node, 'depth':0, 'prev':{'height':None}, 'height':None}]
 
         while q:
-            current = q.pop()
-            node = current[0]
-            parent_style = current[1]
-            parent_transform = current[2]
+            current = q[-1]
+            previous = current['prev']
+            node = current['node']
+            depth = current['depth']
+            height = current['height']
 
-            # Don't enter non-graphical portions of the document
-            if (node.tag == addNS("namedview", "sodipodi")
-                or node.tag == addNS("defs", "svg")
-                or node.tag == addNS("metadata", "svg")
-                or node.tag == addNS("foreignObject", "svg")):
-                continue
+            # Recursion path
+            if (height is None):
+                # Don't enter non-graphical portions of the document
+                if (node.tag == addNS("namedview", "sodipodi")
+                    or node.tag == addNS("defs", "svg")
+                    or node.tag == addNS("metadata", "svg")
+                    or node.tag == addNS("foreignObject", "svg")):
+                    q.pop()
 
-            # Compose the transformations
-            if node.tag == addNS("svg", "svg") and node.get("viewBox"):
-                vx, vy, vw, vh = [self._get_dimension(x)
-                    for x in node.get("viewBox").split()]
-                dw = self._get_dimension(node.get("width", vw))
-                dh = self._get_dimension(node.get("height", vh))
-                t = ("translate(%f, %f) scale(%f, %f)" %
-                    (-vx, -vy, dw / vw, dh / vh))
-                this_transform = simpletransform.parseTransform(
-                    t, parent_transform)
-                this_transform = simpletransform.parseTransform(
-                    node.get("transform"), this_transform)
-                del node.attrib["viewBox"]
-            else:
-                this_transform = simpletransform.parseTransform(node.get(
-                    "transform"), parent_transform)
+                # Base case: Leaf node
+                if (node.tag != addNS("g", "svg") or not len(node)):
+                    current['height'] = 0
 
-            # Compose the style attribs
-            this_style = simplestyle.parseStyle(node.get("style", ""))
-            remaining_style = {}  # Style attributes that are not propagated
-
-            # Filters should remain on the top ancestor
-            non_propagated = ["filter"]
-            for key in non_propagated:
-                if key in this_style.keys():
-                    remaining_style[key] = this_style[key]
-                    del this_style[key]
-
-            # Create a copy of the parent style, and merge this style into it
-            parent_style_copy = parent_style.copy()
-            parent_style_copy.update(this_style)
-            this_style = parent_style_copy
-
-            # Merge in any attributes outside of the style
-            style_attribs = ["fill", "stroke"]
-            for attrib in style_attribs:
-                if node.get(attrib):
-                    this_style[attrib] = node.get(attrib)
-                    del node.attrib[attrib]
-
-            if (node.tag == addNS("svg", "svg")
-                or node.tag == addNS("g", "svg")
-                or node.tag == addNS("a", "svg")
-                or node.tag == addNS("switch", "svg")):
-                # Leave only non-propagating style attributes
-                if len(remaining_style) == 0:
-                    if "style" in node.keys():
-                        del node.attrib["style"]
+                # Recursive case: Group element with children
                 else:
-                    node.set("style", simplestyle.formatStyle(remaining_style))
-
-                # Remove the transform attribute
-                if "transform" in node.keys():
-                    del node.attrib["transform"]
-
-                # Queue any subelements for propagation
-                for c in node.iterchildren():
-                    q.append((c, this_style, this_transform))
-
-                # Flatten grouping if this is a group element
-                # and remove leftover empty group
-                # N.B. Do this last, as it destroys the parent/child relation.
-                if (node.tag == inkex.addNS('g', 'svg')):
-                    logging.debug("group element = %s, id = %s", node,
-                    node.attrib["id"])
-                    node_parent = node.getparent()
-                    node_index = list(node_parent).index(node)
+                    depth += 1
                     for c in node.iterchildren():
-                        node_parent.insert(node_index, c)
-                    node_parent.remove(node)
-                else:
-                    logging.debug("non-group element = %s", node)
+                        q.append({'node': c, 'prev': current,
+                            'depth': depth, 'height': None})
 
+            # Return path
             else:
-                # This element is not a container
+                # Only process each node once
+                q.pop()
 
-                # Merge remaining_style into this_style
-                this_style.update(remaining_style)
+                # Ungroup if desired
+                if (self._want_ungroup(node, depth, height)):
+                    self._ungroup(node)
+                else:
+                    height += 1
 
-                # Set the element's style and transform attribs
-                node.set("style", simplestyle.formatStyle(this_style))
-                node.set("transform",
-                    simpletransform.formatTransform(this_transform))
+                # Propagate (max) height up the call chain
+                if (previous['height'] is None or previous['height'] < height):
+                    previous['height'] = height
+
+        # Return remaining height of tree after ungrouping as specified
+        return previous['height']
+
+    # Put all ungrouping restrictions here
+    def _want_ungroup(self, node, depth, height):
+        if (node.tag == addNS("g", "svg")
+                and node.getparent() is not None
+                and height > self.options.keepdepth
+                and depth >= self.options.startdepth
+                and depth <= self.options.maxdepth):
+            return True
+        return False
+
+    # Flatten a group into same z-order as parent, propagating attribs
+    def _ungroup(self, node):
+        node_parent = node.getparent()
+        node_index = list(node_parent).index(node)
+        node_style = simplestyle.parseStyle(node.get("style"))
+        node_transform = simpletransform.parseTransform(node.get("transform"))
+        node_clippath = node.get('clip-path')
+        for c in reversed(list(node)):
+            self._merge_transform(c, node_transform)
+            self._merge_style(c, node_style)
+            self._merge_clippath(c, node_clippath)
+            node_parent.insert(node_index, c)
+        node_parent.remove(node)
 
     def effect(self):
         if len(self.selected):
             for elem in self.selected.itervalues():
-                self._ungroup(elem)
+                self._deep_ungroup(elem)
         else:
             for elem in self.document.getroot():
-                self._ungroup(elem)
+                self._deep_ungroup(elem)
 
 if __name__ == '__main__':
     effect = Ungroup()
