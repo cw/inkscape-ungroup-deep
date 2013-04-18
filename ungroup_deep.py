@@ -20,6 +20,11 @@ try:
 except ImportError:
     raise ImportError("""No module named inkex in {0}.""".format(__file__))
 
+try:
+    from numpy import matrix
+except:
+    raise ImportError("""Cannot find numpy.matrix in {0}.""".format(__file__))
+
 SVG_NS = "http://www.w3.org/2000/svg"
 INKSCAPE_NS = "http://www.inkscape.org/namespaces/inkscape"
 
@@ -147,8 +152,67 @@ class Ungroup(inkex.Effect):
             # Set the element's style attribs
             node.set("style", simplestyle.formatStyle(this_style))
 
-    def _merge_clippath(self, node, clippath):
-        pass
+    def _merge_clippath(self, node, clippathurl):
+
+        if (clippathurl):
+            node_transform = simpletransform.parseTransform(
+                    node.get("transform"))
+            if (node_transform):
+                # Clip-paths on nodes with a transform have the transform
+                # applied to the clipPath as well, which we don't want.  So, we
+                # create new clipPath element with references to all existing
+                # clippath subelements, but with the inverse transform applied
+                inverse_node_transform = simpletransform.formatTransform(
+                        self._invert_transform(node_transform))
+                new_clippath = inkex.etree.SubElement(
+                        self.xpathSingle('//svg:defs'), 'clipPath',
+                        {'clipPathUnits': 'userSpaceOnUse',
+                                'id': self.uniqueId("clipPath")})
+                clippath = self.getElementById(clippathurl[5:-1])
+                for c in (clippath.iterchildren()):
+                    inkex.etree.SubElement(new_clippath, 'use',
+                            {inkex.addNS('href', 'xlink'): '#' + c.get("id"),
+                                    'transform': inverse_node_transform,
+                                    'id': self.uniqueId("use")})
+
+                # Set the clippathurl to be the one with the inverse transform
+                clippathurl = "url(#" + new_clippath.get("id") + ")"
+
+            # Reference the parent clip-path to keep clipping intersection
+            # Find end of clip-path chain and add reference there
+            node_clippathurl = node.get("clip-path")
+            while (node_clippathurl):
+                node = self.getElementById(node_clippathurl[5:-1])
+                node_clippathurl = node.get("clip-path")
+            node.set("clip-path", clippathurl)
+
+    def _invert_transform(self, transform):
+        # duplicate list to avoid modifying it
+        return matrix(transform + [[0, 0, 1]]).I.tolist()[0:2]
+
+    # Flatten a group into same z-order as parent, propagating attribs
+    def _ungroup(self, node):
+        node_parent = node.getparent()
+        node_index = list(node_parent).index(node)
+        node_style = simplestyle.parseStyle(node.get("style"))
+        node_transform = simpletransform.parseTransform(node.get("transform"))
+        node_clippathurl = node.get('clip-path')
+        for c in reversed(list(node)):
+            self._merge_transform(c, node_transform)
+            self._merge_style(c, node_style)
+            self._merge_clippath(c, node_clippathurl)
+            node_parent.insert(node_index, c)
+        node_parent.remove(node)
+
+    # Put all ungrouping restrictions here
+    def _want_ungroup(self, node, depth, height):
+        if (node.tag == addNS("g", "svg") and
+                node.getparent() is not None and
+                height > self.options.keepdepth and
+                depth >= self.options.startdepth and
+                depth <= self.options.maxdepth):
+            return True
+        return False
 
     def _deep_ungroup(self, node):
         # using iteration instead of recursion to avoid hitting Python
@@ -159,7 +223,6 @@ class Ungroup(inkex.Effect):
 
         while q:
             current = q[-1]
-            previous = current['prev']
             node = current['node']
             depth = current['depth']
             height = current['height']
@@ -186,45 +249,19 @@ class Ungroup(inkex.Effect):
 
             # Return path
             else:
-                # Only process each node once
-                q.pop()
-
                 # Ungroup if desired
                 if (self._want_ungroup(node, depth, height)):
                     self._ungroup(node)
-                else:
-                    height += 1
 
                 # Propagate (max) height up the call chain
-                if (previous['height'] is None or previous['height'] < height):
+                height += 1
+                previous = current['prev']
+                prev_height = previous['height']
+                if (prev_height is None or prev_height < height):
                     previous['height'] = height
 
-        # Return remaining height of tree after ungrouping as specified
-        return previous['height']
-
-    # Put all ungrouping restrictions here
-    def _want_ungroup(self, node, depth, height):
-        if (node.tag == addNS("g", "svg")
-                and node.getparent() is not None
-                and height > self.options.keepdepth
-                and depth >= self.options.startdepth
-                and depth <= self.options.maxdepth):
-            return True
-        return False
-
-    # Flatten a group into same z-order as parent, propagating attribs
-    def _ungroup(self, node):
-        node_parent = node.getparent()
-        node_index = list(node_parent).index(node)
-        node_style = simplestyle.parseStyle(node.get("style"))
-        node_transform = simpletransform.parseTransform(node.get("transform"))
-        node_clippath = node.get('clip-path')
-        for c in reversed(list(node)):
-            self._merge_transform(c, node_transform)
-            self._merge_style(c, node_style)
-            self._merge_clippath(c, node_clippath)
-            node_parent.insert(node_index, c)
-        node_parent.remove(node)
+                # Only process each node once
+                q.pop()
 
     def effect(self):
         if len(self.selected):
