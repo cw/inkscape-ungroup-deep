@@ -1,5 +1,7 @@
-1. To install, simply copy ungroup*.py and ungroup_deep.inx into your inkscape
+1. To install, copy ungroup*.py and ungroup_deep.inx into your inkscape
     extensions directory.
 
     The exact folder may be different on your system, but on mine it's in
     ~/.config/inkscape/extensions/
+
+    Windows install path is typically /Users/user/AppData/Roaming/Inkscape/Extensions/
